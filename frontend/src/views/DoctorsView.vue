@@ -24,18 +24,27 @@
       </div>
     </div>
 
-    <!-- Loading State -->
-    <div v-if="loading" class="loading-overlay">
-      <div class="spinner"></div>
-      <span>Memuat daftar dokter...</span>
+    <!-- Loading State (Skeleton) -->
+    <div v-if="loading" class="grid grid-3">
+      <div v-for="i in 6" :key="i" class="doctor-card glass-card">
+        <div class="skeleton-box" style="width: 72px; height: 72px; border-radius: 50%; margin-bottom: 1rem;"></div>
+        <div class="skeleton-box" style="width: 60%; height: 24px; margin-bottom: 0.5rem;"></div>
+        <div class="skeleton-box" style="width: 40%; height: 20px; border-radius: 12px; margin-bottom: 1rem;"></div>
+        <div class="skeleton-box" style="width: 90%; height: 40px; margin-bottom: 1.5rem;"></div>
+        <div style="display: flex; flex-direction: column; gap: 0.5rem; width: 100%;">
+          <div class="skeleton-box" style="width: 100%; height: 32px; border-radius: 8px;"></div>
+          <div class="skeleton-box" style="width: 100%; height: 32px; border-radius: 8px;"></div>
+        </div>
+      </div>
     </div>
 
     <!-- Doctor Cards Grid -->
     <div v-else-if="filteredDoctors.length > 0" class="grid grid-3">
       <div
-        v-for="doctor in filteredDoctors"
+        v-for="(doctor, index) in filteredDoctors"
         :key="doctor.id"
-        class="doctor-card glass-card"
+        class="doctor-card glass-card animate-stagger"
+        :style="{ animationDelay: `${index * 0.1}s` }"
       >
         <div class="doctor-avatar">
           <span class="avatar-letter">{{ doctor.name.charAt(0) }}</span>
@@ -252,6 +261,20 @@ onMounted(async () => {
 @media (max-width: 768px) {
   .doctor-card {
     padding: var(--space-6);
+  }
+}
+
+/* Staggered Animation */
+.animate-stagger {
+  opacity: 0;
+  transform: translateY(20px) scale(0.95);
+  animation: slideFadeIn 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes slideFadeIn {
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
   }
 }
 </style>

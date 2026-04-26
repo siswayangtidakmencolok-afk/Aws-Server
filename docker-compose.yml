@@ -1,0 +1,62 @@
+# Docker Compose for Local Development
+# Provides PostgreSQL and DynamoDB Local for testing without AWS credentials.
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: telemedicine-postgres
+    environment:
+      POSTGRES_DB: telemedicine
+      POSTGRES_USER: telemedicine
+      POSTGRES_PASSWORD: telemedicine123
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/init.sql:/docker-entrypoint-initdb.d/01-init.sql
+      - ./database/seed.sql:/docker-entrypoint-initdb.d/02-seed.sql
+    networks:
+      - telemedicine-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U telemedicine"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # DynamoDB Local
+  dynamodb-local:
+    image: amazon/dynamodb-local:latest
+    container_name: telemedicine-dynamodb
+    ports:
+      - "8000:8000"
+    command: "-jar DynamoDBLocal.jar -sharedDb -dbPath /home/dynamodblocal/data"
+    volumes:
+      - dynamodb_data:/home/dynamodblocal/data
+    networks:
+      - telemedicine-network
+
+  # DynamoDB Admin GUI (optional, helpful for debugging)
+  dynamodb-admin:
+    image: aaronshaf/dynamodb-admin
+    container_name: telemedicine-dynamodb-admin
+    ports:
+      - "8001:8001"
+    environment:
+      DYNAMO_ENDPOINT: http://dynamodb-local:8000
+      AWS_REGION: ap-southeast-1
+      AWS_ACCESS_KEY_ID: local
+      AWS_SECRET_ACCESS_KEY: local
+    depends_on:
+      - dynamodb-local
+    networks:
+      - telemedicine-network
+
+volumes:
+  postgres_data:
+  dynamodb_data:
+
+networks:
+  telemedicine-network:
+    name: telemedicine-network
+    driver: bridge

@@ -1,0 +1,941 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Nusantara Telemedicine Portal - Serverless Backend
+  Platform telemedicine berbasis serverless dengan Lambda, RDS, DynamoDB, S3, SQS, SNS.
+
+Globals:
+  Function:
+    Runtime: nodejs20.x
+    Timeout: 30
+    MemorySize: 256
+    Environment:
+      Variables:
+        IS_LOCAL: 'false'
+        DB_HOST: !GetAtt TelemedicineDB.Endpoint.Address
+        DB_NAME: telemedicine
+        CHAT_TABLE: !Ref ChatSessionsTable
+        CONNECTIONS_TABLE: !Ref WebSocketConnectionsTable
+        BOOKING_QUEUE_URL: !Ref BookingQueue
+        DOCUMENT_QUEUE_URL: !Ref DocumentQueue
+        SNS_TOPIC_ARN: !Ref NotificationTopic
+
+Parameters:
+  Stage:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, staging, prod]
+  DBUsername:
+    Type: String
+    Default: telemedicine
+    NoEcho: true
+  DBPassword:
+    Type: String
+    Default: telemedicine123
+    NoEcho: true
+    MinLength: 8
+
+Resources:
+  # ============================================================
+  # API Gateway (REST)
+  # ============================================================
+  TelemedicineApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      Name: !Sub lks-api-peserta-${Stage}
+      StageName: !Ref Stage
+      Cors:
+        AllowMethods: "'GET,POST,PUT,DELETE,OPTIONS'"
+        AllowHeaders: "'Content-Type,Authorization,X-Amz-Date,X-Api-Key'"
+        AllowOrigin: "'*'"
+      Auth:
+        Authorizers:
+          JwtAuthorizer:
+            FunctionArn: !GetAtt AuthFunction.Arn
+            Identity:
+              Header: Authorization
+        AddDefaultAuthorizerToCorsPreflight: false
+
+  # ============================================================
+  # API Gateway (WebSocket)
+  # ============================================================
+  WebSocketApi:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: !Sub lks-ws-peserta-${Stage}
+      ProtocolType: WEBSOCKET
+      RouteSelectionExpression: "$request.body.action"
+
+  WebSocketStage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      ApiId: !Ref WebSocketApi
+      StageName: !Ref Stage
+      AutoDeploy: true
+
+  # ============================================================
+  # Lambda Functions
+  # ============================================================
+
+  # --- Auth Function ---
+  AuthFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub lks-auth-peserta-${Stage}
+      Handler: src/auth/index.loginHandler
+      CodeUri: .
+      Policies:
+        - SSMParameterReadPolicy:
+            ParameterName: lks/telemedicine/db/*
+        - VPCAccessPolicy: {}
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSecurityGroup
+        SubnetIds:
+          - !Ref PrivateSubnet1
+          - !Ref PrivateSubnet2
+      Events:
+        Login:
+          Type: Api
+          Properties:
+            RestApiId: !Ref TelemedicineApi
+            Path: /auth/login
+            Method: POST
+            Auth:
+              Authorizer: NONE
+        Register:
+          Type: Api
+          Properties:
+            RestApiId: !Ref TelemedicineApi
+            Path: /auth/register
+            Method: POST
+            Auth:
+              Authorizer: NONE
+      Tags:
+        Project: nusantara-telemedicine
+        Service: auth
+
+  AuthorizerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub lks-authorizer-peserta-${Stage}
+      Handler: src/auth/index.authorizerHandler
+      CodeUri: .
+      Policies:
+        - SSMParameterReadPolicy:
+            ParameterName: lks/telemedicine/db/*
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSecurityGroup
+        SubnetIds:
+          - !Ref PrivateSubnet1
+          - !Ref PrivateSubnet2
+      Tags:
+        Project: nusantara-telemedicine
+        Service: auth
+
+  # --- Doctor Function ---
+  DoctorFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub lks-doctor-peserta-${Stage}
+      Handler: src/doctor/index.handler
+      CodeUri: .
+      Environment:
+        Variables:
+          S3_BUCKET: !Ref MedicalDocumentsBucket
+      Policies:
+        - SSMParameterReadPolicy:
+            ParameterName: lks/telemedicine/db/*
+        - VPCAccessPolicy: {}
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSecurityGroup
+        SubnetIds:
+          - !Ref PrivateSubnet1
+          - !Ref PrivateSubnet2
+      Events:
+        ListDoctors:
+          Type: Api
+          Properties:
+            RestApiId: !Ref TelemedicineApi
+            Path: /doctor
+            Method: GET
+            Auth:
+              Authorizer: JwtAuthorizer
+        GetDoctor:
+          Type: Api
+          Properties:
+            RestApiId: !Ref TelemedicineApi
+            Path: /doctor/{id}
+            Method: GET
+            Auth:
+              Authorizer: JwtAuthorizer
+      Tags:
+        Project: nusantara-telemedicine
+        Service: doctor
+
+  # --- Booking Function ---
+  BookingFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub lks-booking-peserta-${Stage}
+      Handler: src/booking/index.handler
+      CodeUri: .
+      Policies:
+        - SSMParameterReadPolicy:
+            ParameterName: lks/telemedicine/db/*
+        - SQSSendMessagePolicy:
+            QueueName: !GetAtt BookingQueue.QueueName
+        - VPCAccessPolicy: {}
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSecurityGroup
+        SubnetIds:
+          - !Ref PrivateSubnet1
+          - !Ref PrivateSubnet2
+      Events:
+        CreateBooking:
+          Type: Api
+          Properties:
+            RestApiId: !Ref TelemedicineApi
+            Path: /appointment
+            Method: POST
+            Auth:
+              Authorizer: JwtAuthorizer
+        ListBookings:
+          Type: Api
+          Properties:
+            RestApiId: !Ref TelemedicineApi
+            Path: /appointment
+            Method: GET
+            Auth:
+              Authorizer: JwtAuthorizer
+      Tags:
+        Project: nusantara-telemedicine
+        Service: booking
+
+  # --- Upload Function ---
+  UploadFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub lks-upload-peserta-${Stage}
+      Handler: src/upload/index.handler
+      CodeUri: .
+      Environment:
+        Variables:
+          S3_BUCKET: !Ref MedicalDocumentsBucket
+      Policies:
+        - S3CrudPolicy:
+            BucketName: !Ref MedicalDocumentsBucket
+      Events:
+        GetUploadUrl:
+          Type: Api
+          Properties:
+            RestApiId: !Ref TelemedicineApi
+            Path: /upload-url
+            Method: POST
+            Auth:
+              Authorizer: JwtAuthorizer
+      Tags:
+        Project: nusantara-telemedicine
+        Service: upload
+
+  # --- Document Function (S3 Trigger) ---
+  DocumentFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub lks-document-peserta-${Stage}
+      Handler: src/document/index.handler
+      CodeUri: .
+      Environment:
+        Variables:
+          S3_BUCKET: !Ref MedicalDocumentsBucket
+      Policies:
+        - SSMParameterReadPolicy:
+            ParameterName: lks/telemedicine/db/*
+        - S3ReadPolicy:
+            BucketName: !Ref MedicalDocumentsBucket
+        - SQSSendMessagePolicy:
+            QueueName: !GetAtt DocumentQueue.QueueName
+        - VPCAccessPolicy: {}
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSecurityGroup
+        SubnetIds:
+          - !Ref PrivateSubnet1
+          - !Ref PrivateSubnet2
+      Events:
+        S3Upload:
+          Type: S3
+          Properties:
+            Bucket: !Ref MedicalDocumentsBucket
+            Events: s3:ObjectCreated:*
+            Filter:
+              S3Key:
+                Rules:
+                  - Name: prefix
+                    Value: medical-documents/
+      Tags:
+        Project: nusantara-telemedicine
+        Service: document
+
+  # --- Notification Function (SQS Consumer) ---
+  NotificationFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub lks-notification-peserta-${Stage}
+      Handler: src/notification/index.handler
+      CodeUri: .
+      Policies:
+        - SNSPublishMessagePolicy:
+            TopicName: !GetAtt NotificationTopic.TopicName
+        - VPCAccessPolicy: {}
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSecurityGroup
+        SubnetIds:
+          - !Ref PrivateSubnet1
+          - !Ref PrivateSubnet2
+      Events:
+        BookingQueueEvent:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt BookingQueue.Arn
+            BatchSize: 5
+        DocumentQueueEvent:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt DocumentQueue.Arn
+            BatchSize: 5
+      Tags:
+        Project: nusantara-telemedicine
+        Service: notification
+
+  # --- WebSocket Functions ---
+  WebSocketConnectFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub lks-ws-connect-peserta-${Stage}
+      Handler: src/websocket/index.connectHandler
+      CodeUri: .
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref WebSocketConnectionsTable
+      Tags:
+        Project: nusantara-telemedicine
+        Service: chat
+
+  WebSocketDisconnectFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub lks-ws-disconnect-peserta-${Stage}
+      Handler: src/websocket/index.disconnectHandler
+      CodeUri: .
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref WebSocketConnectionsTable
+      Tags:
+        Project: nusantara-telemedicine
+        Service: chat
+
+  WebSocketSendMessageFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub lks-ws-sendmessage-peserta-${Stage}
+      Handler: src/websocket/index.sendMessageHandler
+      CodeUri: .
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ChatSessionsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref WebSocketConnectionsTable
+        - Statement:
+            - Effect: Allow
+              Action:
+                - execute-api:ManageConnections
+              Resource:
+                - !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/${Stage}/POST/@connections/*"
+      Tags:
+        Project: nusantara-telemedicine
+        Service: chat
+
+  ChatHistoryFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub lks-chat-history-peserta-${Stage}
+      Handler: src/websocket/index.getChatHistoryHandler
+      CodeUri: .
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref ChatSessionsTable
+      Events:
+        GetHistory:
+          Type: Api
+          Properties:
+            RestApiId: !Ref TelemedicineApi
+            Path: /chat/{sessionId}
+            Method: GET
+            Auth:
+              Authorizer: JwtAuthorizer
+      Tags:
+        Project: nusantara-telemedicine
+        Service: chat
+
+  # --- Database Migration Function ---
+  InitDatabaseFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub lks-init-db-peserta-${Stage}
+      Handler: src/migration/index.handler
+      CodeUri: .
+      Policies:
+        - SSMParameterReadPolicy:
+            ParameterName: lks/telemedicine/db/*
+        - VPCAccessPolicy: {}
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSecurityGroup
+        SubnetIds:
+          - !Ref PrivateSubnet1
+          - !Ref PrivateSubnet2
+      Tags:
+        Project: nusantara-telemedicine
+        Service: database
+
+  # WebSocket Routes
+  ConnectRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref WebSocketApi
+      RouteKey: $connect
+      AuthorizationType: NONE
+      Target: !Sub integrations/${ConnectIntegration}
+
+  ConnectIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref WebSocketApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !Sub arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${WebSocketConnectFunction.Arn}/invocations
+
+  DisconnectRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref WebSocketApi
+      RouteKey: $disconnect
+      AuthorizationType: NONE
+      Target: !Sub integrations/${DisconnectIntegration}
+
+  DisconnectIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref WebSocketApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !Sub arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${WebSocketDisconnectFunction.Arn}/invocations
+
+  SendMessageRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref WebSocketApi
+      RouteKey: sendMessage
+      AuthorizationType: NONE
+      Target: !Sub integrations/${SendMessageIntegration}
+
+  SendMessageIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref WebSocketApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !Sub arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${WebSocketSendMessageFunction.Arn}/invocations
+
+  # WebSocket Lambda Permissions
+  ConnectPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref WebSocketConnectFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*/$connect
+
+  DisconnectPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref WebSocketDisconnectFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*/$disconnect
+
+  SendMessagePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref WebSocketSendMessageFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*/sendMessage
+
+  # ============================================================
+  # VPC Infrastructure
+  # ============================================================
+  TelemedicineVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+        - Key: Name
+          Value: !Sub lks-vpc-peserta-${Stage}
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub lks-igw-peserta-${Stage}
+
+  VPCGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref TelemedicineVPC
+      InternetGatewayId: !Ref InternetGateway
+
+  # Public Subnets
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref TelemedicineVPC
+      CidrBlock: 10.0.1.0/24
+      AvailabilityZone: !Select [ 0, !GetAZs "" ]
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub lks-public-subnet-1-${Stage}
+
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref TelemedicineVPC
+      CidrBlock: 10.0.2.0/24
+      AvailabilityZone: !Select [ 1, !GetAZs "" ]
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub lks-public-subnet-2-${Stage}
+
+  # Private Subnets
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref TelemedicineVPC
+      CidrBlock: 10.0.3.0/24
+      AvailabilityZone: !Select [ 0, !GetAZs "" ]
+      Tags:
+        - Key: Name
+          Value: !Sub lks-private-subnet-1-${Stage}
+
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref TelemedicineVPC
+      CidrBlock: 10.0.4.0/24
+      AvailabilityZone: !Select [ 1, !GetAZs "" ]
+      Tags:
+        - Key: Name
+          Value: !Sub lks-private-subnet-2-${Stage}
+
+  # NAT Gateway
+  NATEIP:
+    Type: AWS::EC2::EIP
+    DependsOn: VPCGatewayAttachment
+    Properties:
+      Domain: vpc
+
+  NATGateway:
+    Type: AWS::EC2::NATGateway
+    Properties:
+      AllocationId: !GetAtt NATEIP.AllocationId
+      SubnetId: !Ref PublicSubnet1
+      Tags:
+        - Key: Name
+          Value: !Sub lks-nat-peserta-${Stage}
+
+  # Routing
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref TelemedicineVPC
+      Tags:
+        - Key: Name
+          Value: !Sub lks-public-rt-${Stage}
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnet1Association:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet1
+      RouteTableId: !Ref PublicRouteTable
+
+  PublicSubnet2Association:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet2
+      RouteTableId: !Ref PublicRouteTable
+
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref TelemedicineVPC
+      Tags:
+        - Key: Name
+          Value: !Sub lks-private-rt-${Stage}
+
+  PrivateRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NATGateway
+
+  PrivateSubnet1Association:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet1
+      RouteTableId: !Ref PrivateRouteTable
+
+  PrivateSubnet2Association:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet2
+      RouteTableId: !Ref PrivateRouteTable
+
+  # Security Groups
+  LambdaSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for Telemedicine Lambda functions
+      VpcId: !Ref TelemedicineVPC
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Sub lks-lambda-sg-${Stage}
+
+  DBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for Telemedicine RDS instance
+      VpcId: !Ref TelemedicineVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 5432
+          ToPort: 5432
+          SourceSecurityGroupId: !Ref LambdaSecurityGroup
+      Tags:
+        - Key: Name
+          Value: !Sub lks-db-sg-${Stage}
+
+  DBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: Subnets for Telemedicine RDS instance
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+      Tags:
+        - Key: Name
+          Value: !Sub lks-db-subnet-group-${Stage}
+
+  # ============================================================
+  # DynamoDB Tables
+  # ============================================================
+  ChatSessionsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub lks-chat-sessions-peserta-${Stage}
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: session_id
+          AttributeType: S
+        - AttributeName: timestamp
+          AttributeType: N
+      KeySchema:
+        - AttributeName: session_id
+          KeyType: HASH
+        - AttributeName: timestamp
+          KeyType: RANGE
+      Tags:
+        - Key: Project
+          Value: nusantara-telemedicine
+        - Key: Service
+          Value: chat
+
+  WebSocketConnectionsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub lks-ws-connections-peserta-${Stage}
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: connectionId
+          AttributeType: S
+        - AttributeName: userId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: connectionId
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: userId-index
+          KeySchema:
+            - AttributeName: userId
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      Tags:
+        - Key: Project
+          Value: nusantara-telemedicine
+        - Key: Service
+          Value: chat
+
+  # ============================================================
+  # S3 Bucket
+  # ============================================================
+  MedicalDocumentsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub lks-peserta-telemedicine-${Stage}
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      LifecycleConfiguration:
+        Rules:
+          - Id: MedicalDocumentsLifecycle
+            Status: Enabled
+            Prefix: medical-documents/
+            Transitions:
+              - TransitionInDays: 90
+                StorageClass: GLACIER
+            ExpirationInDays: 365
+      Tags:
+        - Key: Project
+          Value: nusantara-telemedicine
+        - Key: Service
+          Value: storage
+
+  # ============================================================
+  # SQS Queues
+  # ============================================================
+
+  # Booking Queue DLQ
+  BookingDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub lks-queue-booking-dlq-${Stage}
+      MessageRetentionPeriod: 1209600 # 14 days
+      Tags:
+        - Key: Project
+          Value: nusantara-telemedicine
+        - Key: Service
+          Value: booking
+
+  # Booking Queue
+  BookingQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub lks-queue-booking-${Stage}
+      VisibilityTimeout: 30
+      MessageRetentionPeriod: 345600 # 4 days
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt BookingDLQ.Arn
+        maxReceiveCount: 3
+      Tags:
+        - Key: Project
+          Value: nusantara-telemedicine
+        - Key: Service
+          Value: booking
+
+  # Document Queue
+  DocumentQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub lks-queue-document-${Stage}
+      VisibilityTimeout: 30
+      MessageRetentionPeriod: 172800 # 2 days
+      Tags:
+        - Key: Project
+          Value: nusantara-telemedicine
+        - Key: Service
+          Value: document
+
+  # ============================================================
+  # SNS Topic
+  # ============================================================
+  NotificationTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub lks-notification-peserta-${Stage}
+      Tags:
+        - Key: Project
+          Value: nusantara-telemedicine
+        - Key: Service
+          Value: notification
+
+  # ============================================================
+  # SSM Parameters
+  # ============================================================
+  SSMDbHost:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /lks/telemedicine/db/db_host
+      Type: String
+      Value: !GetAtt TelemedicineDB.Endpoint.Address
+      Tags:
+        Project: nusantara-telemedicine
+
+  SSMDbUser:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /lks/telemedicine/db/db_user
+      Type: String
+      Value: !Ref DBUsername
+      Tags:
+        Project: nusantara-telemedicine
+
+  SSMDbPass:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /lks/telemedicine/db/db_pass
+      Type: String
+      Value: !Ref DBPassword
+      Tags:
+        Project: nusantara-telemedicine
+
+  SSMDbName:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /lks/telemedicine/db/db_name
+      Type: String
+      Value: telemedicine
+      Tags:
+        Project: nusantara-telemedicine
+
+  SSMJwtSecret:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /lks/telemedicine/db/jwt_secret
+      Type: String
+      Value: nusantara-telemedicine-jwt-secret-change-me
+      Tags:
+        Project: nusantara-telemedicine
+
+  # ============================================================
+  # RDS PostgreSQL
+  # ============================================================
+  TelemedicineDB:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBInstanceIdentifier: !Sub lks-db-peserta-${Stage}
+      DBInstanceClass: db.t3.micro
+      Engine: postgres
+      EngineVersion: '15'
+      MasterUsername: !Ref DBUsername
+      MasterUserPassword: !Ref DBPassword
+      DBName: telemedicine
+      AllocatedStorage: 20
+      StorageEncrypted: true
+      PubliclyAccessible: false
+      MultiAZ: false
+      BackupRetentionPeriod: 7
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      VPCSecurityGroups:
+        - !Ref DBSecurityGroup
+      Tags:
+        - Key: Project
+          Value: nusantara-telemedicine
+        - Key: Service
+          Value: database
+
+  # ============================================================
+  # CloudWatch Alarms
+  # ============================================================
+  LambdaErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub lks-lambda-errors-peserta-${Stage}
+      AlarmDescription: Alarm when Lambda error rate exceeds threshold
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 5
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+
+  SQSBacklogAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub lks-sqs-backlog-peserta-${Stage}
+      AlarmDescription: Alarm when SQS queue backlog exceeds threshold
+      Namespace: AWS/SQS
+      MetricName: ApproximateNumberOfMessagesVisible
+      Dimensions:
+        - Name: QueueName
+          Value: !GetAtt BookingQueue.QueueName
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 100
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+
+# ============================================================
+# Outputs
+# ============================================================
+Outputs:
+  RestApiUrl:
+    Description: REST API Gateway URL
+    Value: !Sub https://${TelemedicineApi}.execute-api.${AWS::Region}.amazonaws.com/${Stage}
+
+  WebSocketApiUrl:
+    Description: WebSocket API Gateway URL
+    Value: !Sub wss://${WebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/${Stage}
+
+  S3BucketName:
+    Description: Medical Documents S3 Bucket
+    Value: !Ref MedicalDocumentsBucket
+
+  BookingQueueUrl:
+    Description: Booking SQS Queue URL
+    Value: !Ref BookingQueue
+
+  DocumentQueueUrl:
+    Description: Document SQS Queue URL
+    Value: !Ref DocumentQueue
+
+  NotificationTopicArn:
+    Description: SNS Notification Topic ARN
+    Value: !Ref NotificationTopic
+
+  RdsEndpoint:
+    Description: RDS PostgreSQL Endpoint
+    Value: !GetAtt TelemedicineDB.Endpoint.Address
+
+  ChatTableName:
+    Description: DynamoDB Chat Sessions Table
+    Value: !Ref ChatSessionsTable

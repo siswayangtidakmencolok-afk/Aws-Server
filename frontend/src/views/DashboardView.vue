@@ -1,7 +1,7 @@
 <template>
   <div class="dashboard">
     <!-- Welcome Banner -->
-    <div class="welcome-banner">
+    <div class="welcome-banner animate-stagger" style="animation-delay: 0.1s">
       <div class="welcome-content">
         <h2 class="welcome-title">
           Selamat {{ greeting }}, <span class="text-primary">{{ authStore.userName }}</span> 👋
@@ -19,7 +19,7 @@
 
     <!-- Stats Grid -->
     <div class="grid grid-4 mb-8">
-      <div class="stat-card" v-for="(stat, i) in stats" :key="i">
+      <div class="stat-card glass-card animate-stagger" v-for="(stat, i) in stats" :key="i" :style="{ animationDelay: `${0.2 + (i * 0.1)}s` }">
         <div class="stat-icon" :style="{ background: stat.iconBg, color: stat.iconColor }">
           <span v-html="stat.icon"></span>
         </div>
@@ -31,7 +31,7 @@
     <!-- Main Content Grid -->
     <div class="grid grid-2">
       <!-- Upcoming Appointments -->
-      <div class="glass-card-static">
+      <div class="glass-card animate-stagger" style="animation-delay: 0.6s">
         <div class="card-header">
           <h3 class="card-title">📅 Appointment Mendatang</h3>
           <router-link to="/appointments" class="btn btn-ghost btn-sm">Lihat Semua →</router-link>
@@ -61,7 +61,7 @@
       </div>
 
       <!-- Quick Actions -->
-      <div class="glass-card-static">
+      <div class="glass-card animate-stagger" style="animation-delay: 0.7s">
         <div class="card-header">
           <h3 class="card-title">⚡ Aksi Cepat</h3>
         </div>
@@ -196,8 +196,10 @@ onMounted(async () => {
   align-items: center;
   justify-content: space-between;
   padding: var(--space-8);
-  background: var(--gradient-card);
-  border: 1px solid var(--color-border);
+  background: linear-gradient(135deg, rgba(6, 182, 212, 0.1) 0%, rgba(139, 92, 246, 0.05) 100%);
+  border: 1px solid rgba(6, 182, 212, 0.2);
+  box-shadow: 0 10px 30px -10px rgba(6, 182, 212, 0.2), inset 0 0 20px rgba(255, 255, 255, 0.02);
+  backdrop-filter: blur(10px);
   border-radius: var(--radius-2xl);
   margin-bottom: var(--space-8);
   position: relative;
@@ -210,8 +212,9 @@ onMounted(async () => {
   top: 0;
   left: 0;
   right: 0;
-  height: 2px;
-  background: var(--gradient-primary);
+  height: 3px;
+  background: linear-gradient(90deg, var(--color-primary), var(--color-secondary));
+  box-shadow: 0 0 15px var(--color-primary-light);
 }
 
 .welcome-title {
@@ -311,13 +314,15 @@ onMounted(async () => {
   transition: all var(--transition-base);
   text-decoration: none;
   color: inherit;
+  position: relative;
+  overflow: hidden;
 }
 
 .action-card:hover {
-  border-color: var(--color-border-hover);
-  background: var(--color-bg-hover);
-  transform: translateY(-2px);
-  box-shadow: var(--shadow-md);
+  border-color: rgba(6, 182, 212, 0.4);
+  background: rgba(6, 182, 212, 0.05);
+  transform: translateY(-4px);
+  box-shadow: 0 8px 25px -5px rgba(6, 182, 212, 0.2);
 }
 
 .action-icon {

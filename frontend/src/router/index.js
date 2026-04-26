@@ -49,17 +49,9 @@ const router = createRouter({
   routes,
 })
 
-// Navigation guard for authentication
+// Navigation guard for authentication (TEMPORARILY BYPASSED FOR UI TESTING)
 router.beforeEach((to, from, next) => {
-  const authStore = useAuthStore()
-
-  if (to.meta.requiresAuth && !authStore.isAuthenticated) {
-    next({ name: 'Login', query: { redirect: to.fullPath } })
-  } else if (to.name === 'Login' && authStore.isAuthenticated) {
-    next({ name: 'Dashboard' })
-  } else {
-    next()
-  }
+  next() // Allow all navigation
 })
 
 export default router

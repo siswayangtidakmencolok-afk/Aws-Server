@@ -215,6 +215,32 @@ Resources:
         Project: nusantara-telemedicine
         Service: booking
 
+  # --- AI Analyzer Function ---
+  AiAnalyzerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub lks-ai-analyzer-peserta-${Stage}
+      Handler: src/ai/index.handler
+      CodeUri: .
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action:
+                - bedrock:InvokeModel
+              Resource: "*"
+      Events:
+        AnalyzeSymptoms:
+          Type: Api
+          Properties:
+            RestApiId: !Ref TelemedicineApi
+            Path: /ai/analyze
+            Method: POST
+            Auth:
+              Authorizer: JwtAuthorizer
+      Tags:
+        Project: nusantara-telemedicine
+        Service: ai
+
   # --- Upload Function ---
   UploadFunction:
     Type: AWS::Serverless::Function

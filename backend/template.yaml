@@ -104,16 +104,12 @@ Resources:
             RestApiId: !Ref TelemedicineApi
             Path: /auth/login
             Method: POST
-            Auth:
-              Authorizer: NONE
         Register:
           Type: Api
           Properties:
             RestApiId: !Ref TelemedicineApi
             Path: /auth/register
             Method: POST
-            Auth:
-              Authorizer: NONE
       Tags:
         Project: nusantara-telemedicine
         Service: auth

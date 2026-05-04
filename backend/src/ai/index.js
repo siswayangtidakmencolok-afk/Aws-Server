@@ -1,8 +1,10 @@
 const { BedrockRuntimeClient, InvokeModelCommand } = require("@aws-sdk/client-bedrock-runtime");
+const AWSXRay = require("aws-xray-sdk-core");
 
 // Inisialisasi Bedrock Client
 // Region mengikuti region default AWS Lambda Anda (biasanya us-east-1 atau ap-southeast-1)
-const client = new BedrockRuntimeClient();
+// Dibungkus (Wrapped) dengan X-Ray agar kemunculan di Service Map terdeteksi!
+const client = AWSXRay.captureAWSv3Client(new BedrockRuntimeClient());
 
 exports.handler = async (event) => {
   try {

@@ -5,7 +5,10 @@ Description: >
   Platform telemedicine berbasis serverless dengan Lambda, RDS, DynamoDB, S3, SQS, SNS.
 
 Globals:
+  Api:
+    TracingEnabled: true
   Function:
+    Tracing: Active
     Runtime: nodejs20.x
     Timeout: 30
     MemorySize: 256

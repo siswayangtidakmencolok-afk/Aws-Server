@@ -241,6 +241,24 @@ Resources:
         Project: nusantara-telemedicine
         Service: ai
 
+  # --- Booking State Machine ---
+  BookingStateMachine:
+    Type: AWS::Serverless::StateMachine
+    Properties:
+      Name: !Sub lks-booking-sm-peserta-${Stage}
+      DefinitionUri: statemachine/booking.asl.json
+      DefinitionSubstitutions:
+        DoctorFunctionArn: !GetAtt DoctorFunction.Arn
+        NotificationTopicArn: !Ref NotificationTopic
+      Policies:
+        - LambdaInvokePolicy:
+            FunctionName: !Ref DoctorFunction
+        - SNSPublishMessagePolicy:
+            TopicName: !GetAtt NotificationTopic.TopicName
+      Tags:
+        Project: nusantara-telemedicine
+        Service: booking
+
   # --- Upload Function ---
   UploadFunction:
     Type: AWS::Serverless::Function

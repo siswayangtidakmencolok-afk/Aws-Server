@@ -103,7 +103,7 @@ Resources:
   WebACLAssociation:
     Type: AWS::WAFv2::WebACLAssociation
     Properties:
-      ResourceArn: !Sub arn:aws:apigateway:${AWS::Region}::/restapis/${TelemedicineApi}/stages/${Stage}
+      ResourceArn: !Sub arn:aws:apigateway:${AWS::Region}::/restapis/${TelemedicineApi}/stages/${TelemedicineApi.Stage}
       WebACLArn: !GetAtt TelemedicineWebACL.Arn
 
 

@@ -65,7 +65,7 @@ Resources:
   TelemedicineWebACL:
     Type: AWS::WAFv2::WebACL
     Properties:
-      Name: !Sub lks-waf-peserta-${Stage}
+      Name: !Sub lks-waf-fhazwan-${Stage}
       Description: WAF untuk melindungi API Telemedicine
       Scope: REGIONAL
       DefaultAction:
@@ -100,11 +100,12 @@ Resources:
             CloudWatchMetricsEnabled: true
             MetricName: AWSManagedRulesCommonRuleSetMetric
 
-  WebACLAssociation:
-    Type: AWS::WAFv2::WebACLAssociation
-    Properties:
-      ResourceArn: !Sub arn:aws:apigateway:${AWS::Region}::/restapis/${TelemedicineApi}/stages/${TelemedicineApi.Stage}
-      WebACLArn: !GetAtt TelemedicineWebACL.Arn
+#  WebACLAssociation:
+#    Type: AWS::WAFv2::WebACLAssociation
+#    DependsOn: TelemedicineApiStage
+#    Properties:
+#      ResourceArn: !Sub arn:aws:apigateway:${AWS::Region}::/restapis/${TelemedicineApi}/stages/${TelemedicineApi.Stage}
+#      WebACLArn: !GetAtt TelemedicineWebACL.Arn
 
 
   # ============================================================

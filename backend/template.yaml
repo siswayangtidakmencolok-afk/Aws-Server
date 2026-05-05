@@ -60,6 +60,54 @@ Resources:
         AddDefaultAuthorizerToCorsPreflight: false
 
   # ============================================================
+  # AWS WAF (Web Application Firewall)
+  # ============================================================
+  TelemedicineWebACL:
+    Type: AWS::WAFv2::WebACL
+    Properties:
+      Name: !Sub lks-waf-peserta-${Stage}
+      Description: WAF untuk melindungi API Telemedicine
+      Scope: REGIONAL
+      DefaultAction:
+        Allow: {}
+      VisibilityConfig:
+        SampledRequestsEnabled: true
+        CloudWatchMetricsEnabled: true
+        MetricName: !Sub lks-waf-metric-${Stage}
+      Rules:
+        - Name: DdosProtectionRateLimit
+          Priority: 1
+          Action:
+            Block: {}
+          Statement:
+            RateBasedStatement:
+              Limit: 50
+              AggregateKeyType: IP
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: DdosProtectionRateLimitMetric
+        - Name: AWSManagedRulesCommonRuleSet
+          Priority: 2
+          OverrideAction:
+            None: {}
+          Statement:
+            ManagedRuleGroupStatement:
+              VendorName: AWS
+              Name: AWSManagedRulesCommonRuleSet
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: AWSManagedRulesCommonRuleSetMetric
+
+  WebACLAssociation:
+    Type: AWS::WAFv2::WebACLAssociation
+    Properties:
+      ResourceArn: !Sub arn:aws:apigateway:${AWS::Region}::/restapis/${TelemedicineApi}/stages/${Stage}
+      WebACLArn: !GetAtt TelemedicineWebACL.Arn
+
+
+  # ============================================================
   # API Gateway (WebSocket)
   # ============================================================
   WebSocketApi:

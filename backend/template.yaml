@@ -1,6 +1,6 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
-Description: Nusantara Telemedicine - Full App (Testing SSM, No RDS)
+Description: Nusantara Telemedicine - Final Stable Stack (No RDS)
 
 Globals:
   Function:
@@ -14,6 +14,7 @@ Globals:
         BOOKING_QUEUE_URL: !Ref BookingQueue
         DOCUMENT_QUEUE_URL: !Ref DocumentQueue
         SNS_TOPIC_ARN: !Ref NotificationTopic
+        S3_BUCKET: !Ref MedicalDocumentsBucket
 
 Resources:
   TelemedicineApi:
@@ -23,6 +24,8 @@ Resources:
       StageName: dev
       Cors:
         AllowOrigin: "'*'"
+        AllowMethods: "'GET,POST,PUT,DELETE,OPTIONS'"
+        AllowHeaders: "'Content-Type,Authorization,X-Amz-Date,X-Api-Key'"
       Auth:
         Authorizers:
           JwtAuthorizer:
@@ -30,7 +33,7 @@ Resources:
             Identity:
               Header: Authorization
 
-  # --- Auth & Doctor Functions ---
+  # --- Functions ---
   AuthFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -38,18 +41,8 @@ Resources:
       Handler: src/auth/index.loginHandler
       CodeUri: .
       Events:
-        Login:
-          Type: Api
-          Properties:
-            RestApiId: !Ref TelemedicineApi
-            Path: /auth/login
-            Method: POST
-        Register:
-          Type: Api
-          Properties:
-            RestApiId: !Ref TelemedicineApi
-            Path: /auth/register
-            Method: POST
+        Login: {Type: Api, Properties: {RestApiId: !Ref TelemedicineApi, Path: /auth/login, Method: POST}}
+        Register: {Type: Api, Properties: {RestApiId: !Ref TelemedicineApi, Path: /auth/register, Method: POST}}
 
   AuthorizerFunction:
     Type: AWS::Serverless::Function
@@ -65,34 +58,17 @@ Resources:
       Handler: src/doctor/index.handler
       CodeUri: .
       Events:
-        ListDoctors:
-          Type: Api
-          Properties:
-            RestApiId: !Ref TelemedicineApi
-            Path: /doctor
-            Method: GET
-            Auth:
-              Authorizer: JwtAuthorizer
+        ListDoctors: {Type: Api, Properties: {RestApiId: !Ref TelemedicineApi, Path: /doctor, Method: GET, Auth: {Authorizer: JwtAuthorizer}}}
 
-  # --- Booking & Upload ---
   BookingFunction:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: !Sub lks-booking-${AWS::StackName}
       Handler: src/booking/index.handler
       CodeUri: .
-      Policies:
-        - SQSSendMessagePolicy:
-            QueueName: !GetAtt BookingQueue.QueueName
+      Policies: [- SQSSendMessagePolicy: {QueueName: !GetAtt BookingQueue.QueueName}]
       Events:
-        CreateBooking:
-          Type: Api
-          Properties:
-            RestApiId: !Ref TelemedicineApi
-            Path: /appointment
-            Method: POST
-            Auth:
-              Authorizer: JwtAuthorizer
+        CreateBooking: {Type: Api, Properties: {RestApiId: !Ref TelemedicineApi, Path: /appointment, Method: POST, Auth: {Authorizer: JwtAuthorizer}}}
 
   UploadFunction:
     Type: AWS::Serverless::Function
@@ -100,105 +76,70 @@ Resources:
       FunctionName: !Sub lks-upload-${AWS::StackName}
       Handler: src/upload/index.handler
       CodeUri: .
-      Environment:
-        Variables:
-          S3_BUCKET: !Ref MedicalDocumentsBucket
-      Policies:
-        - S3CrudPolicy:
-            BucketName: !Ref MedicalDocumentsBucket
+      Policies: [- S3CrudPolicy: {BucketName: !Ref MedicalDocumentsBucket}]
       Events:
-        GetUploadUrl:
-          Type: Api
-          Properties:
-            RestApiId: !Ref TelemedicineApi
-            Path: /upload-url
-            Method: POST
-            Auth:
-              Authorizer: JwtAuthorizer
+        GetUploadUrl: {Type: Api, Properties: {RestApiId: !Ref TelemedicineApi, Path: /upload-url, Method: POST, Auth: {Authorizer: JwtAuthorizer}}}
 
-  # --- Notification & WebSocket ---
+  DocumentFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub lks-doc-${AWS::StackName}
+      Handler: src/document/index.handler
+      CodeUri: .
+      Policies: [- S3CrudPolicy: {BucketName: !Ref MedicalDocumentsBucket}, - SQSSendMessagePolicy: {QueueName: !GetAtt DocumentQueue.QueueName}]
+      Events:
+        DocEvent: {Type: SQS, Properties: {Queue: !GetAtt DocumentQueue.Arn}}
+
   NotificationFunction:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: !Sub lks-notify-${AWS::StackName}
       Handler: src/notification/index.handler
       CodeUri: .
-      Policies:
-        - SNSPublishMessagePolicy:
-            TopicName: !GetAtt NotificationTopic.TopicName
+      Policies: [- SNSPublishMessagePolicy: {TopicName: !GetAtt NotificationTopic.TopicName}]
       Events:
-        BookingEvent:
-          Type: SQS
-          Properties:
-            Queue: !GetAtt BookingQueue.Arn
-
-  WebSocketConnectFunction:
-    Type: AWS::Serverless::Function
-    Properties:
-      FunctionName: !Sub lks-ws-conn-${AWS::StackName}
-      Handler: src/websocket/index.connectHandler
-      CodeUri: .
-      Policies:
-        - DynamoDBCrudPolicy:
-            TableName: !Ref WebSocketConnectionsTable
-
-  # --- SSM Parameters ---
-  SSMJwtSecret:
-    Type: AWS::SSM::Parameter
-    Properties:
-      Name: !Sub /debug/${AWS::StackName}/jwt_secret
-      Type: String
-      Value: debug-secret-123
+        BookingEvent: {Type: SQS, Properties: {Queue: !GetAtt BookingQueue.Arn}}
 
   # Storage & Messaging
   MedicalDocumentsBucket:
     Type: AWS::S3::Bucket
     Properties:
       BucketName: !Sub lks-tele-docs-${AWS::AccountId}
+      CorsConfiguration:
+        CorsRules:
+          - AllowedHeaders: ['*']
+            AllowedMethods: [GET, PUT, POST, DELETE, HEAD]
+            AllowedOrigins: ['*']
+            MaxAge: 3600
 
   ChatSessionsTable:
     Type: AWS::DynamoDB::Table
     Properties:
       TableName: !Sub lks-chat-${AWS::StackName}
       BillingMode: PAY_PER_REQUEST
-      AttributeDefinitions:
-        - AttributeName: session_id
-          AttributeType: S
-        - AttributeName: timestamp
-          AttributeType: N
-      KeySchema:
-        - AttributeName: session_id
-          KeyType: HASH
-        - AttributeName: timestamp
-          KeyType: RANGE
+      AttributeDefinitions: [{AttributeName: session_id, AttributeType: S}, {AttributeName: timestamp, AttributeType: N}]
+      KeySchema: [{AttributeName: session_id, KeyType: HASH}, {AttributeName: timestamp, KeyType: RANGE}]
 
   WebSocketConnectionsTable:
     Type: AWS::DynamoDB::Table
     Properties:
       TableName: !Sub lks-ws-${AWS::StackName}
       BillingMode: PAY_PER_REQUEST
-      AttributeDefinitions:
-        - AttributeName: connectionId
-          AttributeType: S
-      KeySchema:
-        - AttributeName: connectionId
-          KeyType: HASH
+      AttributeDefinitions: [{AttributeName: connectionId, AttributeType: S}]
+      KeySchema: [{AttributeName: connectionId, KeyType: HASH}]
 
   BookingQueue:
     Type: AWS::SQS::Queue
-    Properties:
-      QueueName: !Sub lks-booking-q-${AWS::StackName}
-
+    Properties: {QueueName: !Sub lks-book-q-${AWS::StackName}}
   DocumentQueue:
     Type: AWS::SQS::Queue
-    Properties:
-      QueueName: !Sub lks-doc-q-${AWS::StackName}
-
+    Properties: {QueueName: !Sub lks-doc-q-${AWS::StackName}}
   NotificationTopic:
     Type: AWS::SNS::Topic
-    Properties:
-      TopicName: !Sub lks-notify-topic-${AWS::StackName}
+    Properties: {TopicName: !Sub lks-notify-t-${AWS::StackName}}
 
 Outputs:
   ApiUrl:
     Value: !Sub "https://${TelemedicineApi}.execute-api.${AWS::Region}.amazonaws.com/dev/"
+  BucketName:
+    Value: !Ref MedicalDocumentsBucket

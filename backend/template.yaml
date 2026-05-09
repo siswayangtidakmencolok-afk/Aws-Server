@@ -40,10 +40,26 @@ Resources:
       FunctionName: !Sub lks-auth-${AWS::StackName}
       Handler: src/auth/index.loginHandler
       CodeUri: .
-      Policies: [- DynamoDBCrudPolicy: {TableName: !Ref UsersTable}]
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref UsersTable
       Events:
-        Login: {Type: Api, Properties: {RestApiId: !Ref TelemedicineApi, Path: /auth/login, Method: POST, Auth: {Authorizer: NONE}}}
-        Register: {Type: Api, Properties: {RestApiId: !Ref TelemedicineApi, Path: /auth/register, Method: POST, Auth: {Authorizer: NONE}}}
+        Login:
+          Type: Api
+          Properties:
+            RestApiId: !Ref TelemedicineApi
+            Path: /auth/login
+            Method: POST
+            Auth:
+              Authorizer: NONE
+        Register:
+          Type: Api
+          Properties:
+            RestApiId: !Ref TelemedicineApi
+            Path: /auth/register
+            Method: POST
+            Auth:
+              Authorizer: NONE
 
   AuthorizerFunction:
     Type: AWS::Serverless::Function
@@ -59,9 +75,16 @@ Resources:
       FunctionName: !Sub lks-doctor-${AWS::StackName}
       Handler: src/doctor/index.handler
       CodeUri: .
-      Policies: [- DynamoDBReadPolicy: {TableName: !Ref DoctorsTable}]
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref DoctorsTable
       Events:
-        ListDoctors: {Type: Api, Properties: {RestApiId: !Ref TelemedicineApi, Path: /doctor, Method: GET}}
+        ListDoctors:
+          Type: Api
+          Properties:
+            RestApiId: !Ref TelemedicineApi
+            Path: /doctor
+            Method: GET
 
   # --- UPLOAD & DOCUMENT ---
   UploadFunction:
@@ -70,9 +93,16 @@ Resources:
       FunctionName: !Sub lks-upload-${AWS::StackName}
       Handler: src/upload/index.handler
       CodeUri: .
-      Policies: [- S3CrudPolicy: {BucketName: !Ref MedicalDocumentsBucket}]
+      Policies:
+        - S3CrudPolicy:
+            BucketName: !Ref MedicalDocumentsBucket
       Events:
-        GetUrl: {Type: Api, Properties: {RestApiId: !Ref TelemedicineApi, Path: /upload-url, Method: POST}}
+        GetUrl:
+          Type: Api
+          Properties:
+            RestApiId: !Ref TelemedicineApi
+            Path: /upload-url
+            Method: POST
 
   DocumentFunction:
     Type: AWS::Serverless::Function
@@ -81,10 +111,17 @@ Resources:
       Handler: src/document/index.handler
       CodeUri: .
       Policies: 
-        - DynamoDBCrudPolicy: {TableName: !Ref DocumentsTable}
-        - S3ReadPolicy: {BucketName: !Ref MedicalDocumentsBucket}
+        - DynamoDBCrudPolicy:
+            TableName: !Ref DocumentsTable
+        - S3ReadPolicy:
+            BucketName: !Ref MedicalDocumentsBucket
       Events:
-        ListDocs: {Type: Api, Properties: {RestApiId: !Ref TelemedicineApi, Path: /document, Method: GET}}
+        ListDocs:
+          Type: Api
+          Properties:
+            RestApiId: !Ref TelemedicineApi
+            Path: /document
+            Method: GET
         S3Trigger:
           Type: S3
           Properties:
@@ -97,9 +134,20 @@ Resources:
       FunctionName: !Sub lks-init-db-${AWS::StackName}
       Handler: src/migration/index.handler
       CodeUri: .
-      Policies: [- DynamoDBCrudPolicy: {TableName: !Ref UsersTable}, - DynamoDBCrudPolicy: {TableName: !Ref DoctorsTable}]
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref UsersTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref DoctorsTable
       Events:
-        InitDb: {Type: Api, Properties: {RestApiId: !Ref TelemedicineApi, Path: /admin/init-db, Method: POST, Auth: {Authorizer: NONE}}}
+        InitDb:
+          Type: Api
+          Properties:
+            RestApiId: !Ref TelemedicineApi
+            Path: /admin/init-db
+            Method: POST
+            Auth:
+              Authorizer: NONE
 
   # --- TABLES ---
   UsersTable:
@@ -107,24 +155,40 @@ Resources:
     Properties:
       TableName: !Sub lks-users-${AWS::StackName}
       BillingMode: PAY_PER_REQUEST
-      AttributeDefinitions: [{AttributeName: email, AttributeType: S}]
-      KeySchema: [{AttributeName: email, KeyType: HASH}]
+      AttributeDefinitions:
+        - AttributeName: email
+          AttributeType: S
+      KeySchema:
+        - AttributeName: email
+          KeyType: HASH
 
   DoctorsTable:
     Type: AWS::DynamoDB::Table
     Properties:
       TableName: !Sub lks-doctors-${AWS::StackName}
       BillingMode: PAY_PER_REQUEST
-      AttributeDefinitions: [{AttributeName: id, AttributeType: S}]
-      KeySchema: [{AttributeName: id, KeyType: HASH}]
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
 
   DocumentsTable:
     Type: AWS::DynamoDB::Table
     Properties:
       TableName: !Sub lks-docs-${AWS::StackName}
       BillingMode: PAY_PER_REQUEST
-      AttributeDefinitions: [{AttributeName: userId, AttributeType: S}, {AttributeName: id, AttributeType: S}]
-      KeySchema: [{AttributeName: userId, KeyType: HASH}, {AttributeName: id, KeyType: RANGE}]
+      AttributeDefinitions:
+        - AttributeName: userId
+          AttributeType: S
+        - AttributeName: id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: userId
+          KeyType: HASH
+        - AttributeName: id
+          KeyType: RANGE
 
   MedicalDocumentsBucket:
     Type: AWS::S3::Bucket

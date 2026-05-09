@@ -47,8 +47,22 @@ Resources:
         - DynamoDBCrudPolicy:
             TableName: !Ref UsersTable
       Events:
-        Login: {Type: Api, Properties: {RestApiId: !Ref TelemedicineApi, Path: /auth/login, Method: POST}}
-        Register: {Type: Api, Properties: {RestApiId: !Ref TelemedicineApi, Path: /auth/register, Method: POST}}
+        Login:
+          Type: Api
+          Properties:
+            RestApiId: !Ref TelemedicineApi
+            Path: /auth/login
+            Method: POST
+            Auth:
+              Authorizer: NONE
+        Register:
+          Type: Api
+          Properties:
+            RestApiId: !Ref TelemedicineApi
+            Path: /auth/register
+            Method: POST
+            Auth:
+              Authorizer: NONE
 
   AuthorizerFunction:
     Type: AWS::Serverless::Function
@@ -113,6 +127,8 @@ Resources:
             RestApiId: !Ref TelemedicineApi
             Path: /admin/init-db
             Method: POST
+            Auth:
+              Authorizer: NONE
 
   # Storage & Messaging
   UsersTable:

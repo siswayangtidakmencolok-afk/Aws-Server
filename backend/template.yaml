@@ -21,12 +21,14 @@ Resources:
     Properties:
       Name: !Sub lks-api-peserta-${AWS::StackName}
       StageName: dev
-      Cors: {AllowOrigin: "'*'"}
+      Cors:
+        AllowOrigin: "'*'"
       Auth:
         Authorizers:
           JwtAuthorizer:
             FunctionArn: !GetAtt AuthorizerFunction.Arn
-            Identity: {Header: Authorization}
+            Identity:
+              Header: Authorization
 
   # --- Auth & Doctor Functions ---
   AuthFunction:
@@ -36,8 +38,18 @@ Resources:
       Handler: src/auth/index.loginHandler
       CodeUri: .
       Events:
-        Login: {Type: Api, Properties: {RestApiId: !Ref TelemedicineApi, Path: /auth/login, Method: POST}}
-        Register: {Type: Api, Properties: {RestApiId: !Ref TelemedicineApi, Path: /auth/register, Method: POST}}
+        Login:
+          Type: Api
+          Properties:
+            RestApiId: !Ref TelemedicineApi
+            Path: /auth/login
+            Method: POST
+        Register:
+          Type: Api
+          Properties:
+            RestApiId: !Ref TelemedicineApi
+            Path: /auth/register
+            Method: POST
 
   AuthorizerFunction:
     Type: AWS::Serverless::Function
@@ -53,7 +65,14 @@ Resources:
       Handler: src/doctor/index.handler
       CodeUri: .
       Events:
-        ListDoctors: {Type: Api, Properties: {RestApiId: !Ref TelemedicineApi, Path: /doctor, Method: GET, Auth: {Authorizer: JwtAuthorizer}}}
+        ListDoctors:
+          Type: Api
+          Properties:
+            RestApiId: !Ref TelemedicineApi
+            Path: /doctor
+            Method: GET
+            Auth:
+              Authorizer: JwtAuthorizer
 
   # --- Booking & Upload ---
   BookingFunction:
@@ -62,9 +81,18 @@ Resources:
       FunctionName: !Sub lks-booking-${AWS::StackName}
       Handler: src/booking/index.handler
       CodeUri: .
-      Policies: [{SQSSendMessagePolicy: {QueueName: !GetAtt BookingQueue.QueueName}}]
+      Policies:
+        - SQSSendMessagePolicy:
+            QueueName: !GetAtt BookingQueue.QueueName
       Events:
-        CreateBooking: {Type: Api, Properties: {RestApiId: !Ref TelemedicineApi, Path: /appointment, Method: POST, Auth: {Authorizer: JwtAuthorizer}}}
+        CreateBooking:
+          Type: Api
+          Properties:
+            RestApiId: !Ref TelemedicineApi
+            Path: /appointment
+            Method: POST
+            Auth:
+              Authorizer: JwtAuthorizer
 
   UploadFunction:
     Type: AWS::Serverless::Function
@@ -72,21 +100,37 @@ Resources:
       FunctionName: !Sub lks-upload-${AWS::StackName}
       Handler: src/upload/index.handler
       CodeUri: .
-      Environment: {Variables: {S3_BUCKET: !Ref MedicalDocumentsBucket}}
-      Policies: [{S3CrudPolicy: {BucketName: !Ref MedicalDocumentsBucket}}]
+      Environment:
+        Variables:
+          S3_BUCKET: !Ref MedicalDocumentsBucket
+      Policies:
+        - S3CrudPolicy:
+            BucketName: !Ref MedicalDocumentsBucket
       Events:
-        GetUploadUrl: {Type: Api, Properties: {RestApiId: !Ref TelemedicineApi, Path: /upload-url, Method: POST, Auth: {Authorizer: JwtAuthorizer}}}
+        GetUploadUrl:
+          Type: Api
+          Properties:
+            RestApiId: !Ref TelemedicineApi
+            Path: /upload-url
+            Method: POST
+            Auth:
+              Authorizer: JwtAuthorizer
 
-  # --- NEW: Notification & WebSocket ---
+  # --- Notification & WebSocket ---
   NotificationFunction:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: !Sub lks-notify-${AWS::StackName}
       Handler: src/notification/index.handler
       CodeUri: .
-      Policies: [{SNSPublishMessagePolicy: {TopicName: !GetAtt NotificationTopic.TopicName}}]
+      Policies:
+        - SNSPublishMessagePolicy:
+            TopicName: !GetAtt NotificationTopic.TopicName
       Events:
-        BookingEvent: {Type: SQS, Properties: {Queue: !GetAtt BookingQueue.Arn}}
+        BookingEvent:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt BookingQueue.Arn
 
   WebSocketConnectFunction:
     Type: AWS::Serverless::Function
@@ -94,9 +138,11 @@ Resources:
       FunctionName: !Sub lks-ws-conn-${AWS::StackName}
       Handler: src/websocket/index.connectHandler
       CodeUri: .
-      Policies: [{DynamoDBCrudPolicy: {TableName: !Ref WebSocketConnectionsTable}}]
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref WebSocketConnectionsTable
 
-  # --- NEW: SSM Parameters (Penyebab Potensial) ---
+  # --- SSM Parameters ---
   SSMJwtSecret:
     Type: AWS::SSM::Parameter
     Properties:
@@ -107,30 +153,51 @@ Resources:
   # Storage & Messaging
   MedicalDocumentsBucket:
     Type: AWS::S3::Bucket
-    Properties: {BucketName: !Sub lks-tele-docs-${AWS::AccountId}}
+    Properties:
+      BucketName: !Sub lks-tele-docs-${AWS::AccountId}
 
   ChatSessionsTable:
     Type: AWS::DynamoDB::Table
     Properties:
       TableName: !Sub lks-chat-${AWS::StackName}
       BillingMode: PAY_PER_REQUEST
-      AttributeDefinitions: [{AttributeName: session_id, AttributeType: S}, {AttributeName: timestamp, AttributeType: N}]
-      KeySchema: [{AttributeName: session_id, KeyType: HASH}, {AttributeName: timestamp, KeyType: RANGE}]
+      AttributeDefinitions:
+        - AttributeName: session_id
+          AttributeType: S
+        - AttributeName: timestamp
+          AttributeType: N
+      KeySchema:
+        - AttributeName: session_id
+          KeyType: HASH
+        - AttributeName: timestamp
+          KeyType: RANGE
 
   WebSocketConnectionsTable:
     Type: AWS::DynamoDB::Table
     Properties:
       TableName: !Sub lks-ws-${AWS::StackName}
       BillingMode: PAY_PER_REQUEST
-      AttributeDefinitions: [{AttributeName: connectionId, AttributeType: S}]
-      KeySchema: [{AttributeName: connectionId, KeyType: HASH}]
+      AttributeDefinitions:
+        - AttributeName: connectionId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: connectionId
+          KeyType: HASH
 
   BookingQueue:
     Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub lks-booking-q-${AWS::StackName}
+
   DocumentQueue:
     Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub lks-doc-q-${AWS::StackName}
+
   NotificationTopic:
     Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub lks-notify-topic-${AWS::StackName}
 
 Outputs:
   ApiUrl:

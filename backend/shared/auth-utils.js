@@ -15,18 +15,29 @@ let jwtSecret = null;
 async function getJwtSecret() {
   if (jwtSecret) return jwtSecret;
 
-  if (process.env.IS_LOCAL === 'true') {
-    jwtSecret = process.env.JWT_SECRET || 'local-dev-secret-key-change-in-production';
+  // Prefer environment variable first (set in template.yaml)
+  if (process.env.JWT_SECRET) {
+    jwtSecret = process.env.JWT_SECRET;
     return jwtSecret;
   }
 
-  const ssm = new SSMClient({});
-  const command = new GetParameterCommand({
-    Name: '/lks/telemedicine/db/jwt_secret',
-    WithDecryption: true,
-  });
-  const response = await ssm.send(command);
-  jwtSecret = response.Parameter.Value;
+  if (process.env.IS_LOCAL === 'true') {
+    jwtSecret = 'local-dev-secret-key';
+    return jwtSecret;
+  }
+
+  try {
+    const ssm = new SSMClient({});
+    const command = new GetParameterCommand({
+      Name: '/lks/telemedicine/db/jwt_secret',
+      WithDecryption: true,
+    });
+    const response = await ssm.send(command);
+    jwtSecret = response.Parameter.Value;
+  } catch (err) {
+    console.warn('SSM not available, using fallback secret');
+    jwtSecret = 'fallback-lks-secret';
+  }
   return jwtSecret;
 }
 

@@ -1,6 +1,6 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
-Description: Nusantara Telemedicine - Public Upload for Testing
+Description: Nusantara Telemedicine - DynamoDB Migration (No RDS)
 
 Globals:
   Function:
@@ -9,12 +9,15 @@ Globals:
     MemorySize: 256
     Environment:
       Variables:
+        USERS_TABLE: !Ref UsersTable
+        DOCTORS_TABLE: !Ref DoctorsTable
         CHAT_TABLE: !Ref ChatSessionsTable
         CONNECTIONS_TABLE: !Ref WebSocketConnectionsTable
         BOOKING_QUEUE_URL: !Ref BookingQueue
         DOCUMENT_QUEUE_URL: !Ref DocumentQueue
         SNS_TOPIC_ARN: !Ref NotificationTopic
         S3_BUCKET: !Ref MedicalDocumentsBucket
+        JWT_SECRET: "lks-secret-key-2024" # Hardcoded for reliability in debug
 
 Resources:
   TelemedicineApi:
@@ -40,6 +43,9 @@ Resources:
       FunctionName: !Sub lks-auth-${AWS::StackName}
       Handler: src/auth/index.loginHandler
       CodeUri: .
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref UsersTable
       Events:
         Login: {Type: Api, Properties: {RestApiId: !Ref TelemedicineApi, Path: /auth/login, Method: POST}}
         Register: {Type: Api, Properties: {RestApiId: !Ref TelemedicineApi, Path: /auth/register, Method: POST}}
@@ -57,8 +63,18 @@ Resources:
       FunctionName: !Sub lks-doctor-${AWS::StackName}
       Handler: src/doctor/index.handler
       CodeUri: .
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref DoctorsTable
       Events:
-        ListDoctors: {Type: Api, Properties: {RestApiId: !Ref TelemedicineApi, Path: /doctor, Method: GET}} # Authorizer dimatikan sementara
+        ListDoctors:
+          Type: Api
+          Properties:
+            RestApiId: !Ref TelemedicineApi
+            Path: /doctor
+            Method: GET
+            Auth:
+              Authorizer: JwtAuthorizer
 
   UploadFunction:
     Type: AWS::Serverless::Function
@@ -75,9 +91,54 @@ Resources:
           Properties:
             RestApiId: !Ref TelemedicineApi
             Path: /upload-url
-            Method: POST # Authorizer dimatikan sementara agar bisa tes upload
+            Method: POST
+            Auth:
+              Authorizer: JwtAuthorizer
+
+  InitDatabaseFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub lks-init-db-${AWS::StackName}
+      Handler: src/migration/index.handler
+      CodeUri: .
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref UsersTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref DoctorsTable
+      Events:
+        InitDb:
+          Type: Api
+          Properties:
+            RestApiId: !Ref TelemedicineApi
+            Path: /admin/init-db
+            Method: POST
 
   # Storage & Messaging
+  UsersTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub lks-users-${AWS::StackName}
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: email
+          AttributeType: S
+      KeySchema:
+        - AttributeName: email
+          KeyType: HASH
+
+  DoctorsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub lks-doctors-${AWS::StackName}
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+
   MedicalDocumentsBucket:
     Type: AWS::S3::Bucket
     Properties:

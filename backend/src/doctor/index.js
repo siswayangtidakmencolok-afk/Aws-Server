@@ -1,25 +1,26 @@
 /**
- * Doctor Lambda Function
- * Handles fetching the list of available doctors.
+ * Doctor Lambda Function (DynamoDB Edition)
+ * Handles fetching the list of available doctors from DynamoDB.
  */
 
-const { query } = require('../../shared/db');
+const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
+const { DynamoDBDocumentClient, ScanCommand, GetCommand } = require('@aws-sdk/lib-dynamodb');
 const response = require('../../shared/response');
+
+const client = new DynamoDBClient({});
+const docClient = DynamoDBDocumentClient.from(client);
+const DOCTORS_TABLE = process.env.DOCTORS_TABLE;
 
 /**
  * GET /doctor
- * Returns a list of all doctors with their specializations.
  */
 exports.handler = async (event) => {
   try {
-    const result = await query(
-      `SELECT d.id, d.name, d.specialization, u.email
-       FROM doctors d
-       LEFT JOIN users u ON d.user_id = u.id
-       ORDER BY d.name ASC`
-    );
+    const result = await docClient.send(new ScanCommand({
+      TableName: DOCTORS_TABLE
+    }));
 
-    return response.success(result.rows);
+    return response.success(result.Items || []);
   } catch (err) {
     console.error('Get doctors error:', err);
     return response.error('Failed to fetch doctors');
@@ -28,7 +29,6 @@ exports.handler = async (event) => {
 
 /**
  * GET /doctor/{id}
- * Returns a single doctor by ID.
  */
 exports.getByIdHandler = async (event) => {
   try {
@@ -38,19 +38,16 @@ exports.getByIdHandler = async (event) => {
       return response.badRequest('Doctor ID is required');
     }
 
-    const result = await query(
-      `SELECT d.id, d.name, d.specialization, u.email
-       FROM doctors d
-       LEFT JOIN users u ON d.user_id = u.id
-       WHERE d.id = $1`,
-      [doctorId]
-    );
+    const result = await docClient.send(new GetCommand({
+      TableName: DOCTORS_TABLE,
+      Key: { id: doctorId }
+    }));
 
-    if (result.rows.length === 0) {
+    if (!result.Item) {
       return response.notFound('Doctor not found');
     }
 
-    return response.success(result.rows[0]);
+    return response.success(result.Item);
   } catch (err) {
     console.error('Get doctor by ID error:', err);
     return response.error('Failed to fetch doctor');

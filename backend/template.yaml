@@ -318,10 +318,18 @@ Resources:
       CodeUri: .
       Environment:
         Variables:
-          S3_BUCKET: !Ref MedicalDocumentsBucket
+          S3_BUCKET: !Sub lks-peserta-telemedicine-${Stage}
       Policies:
-        - S3CrudPolicy:
-            BucketName: !Ref MedicalDocumentsBucket
+        - Statement:
+            - Effect: Allow
+              Action:
+                - s3:GetObject
+                - s3:PutObject
+                - s3:DeleteObject
+                - s3:ListBucket
+              Resource:
+                - !Sub "arn:aws:s3:::lks-peserta-telemedicine-${Stage}"
+                - !Sub "arn:aws:s3:::lks-peserta-telemedicine-${Stage}/*"
       Events:
         GetUploadUrl:
           Type: Api
@@ -335,7 +343,7 @@ Resources:
         Project: nusantara-telemedicine
         Service: upload
 
-  # --- Document Function (S3 Trigger) ---
+  # --- Document Function (SQS Trigger) ---
   DocumentFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -344,12 +352,18 @@ Resources:
       CodeUri: .
       Environment:
         Variables:
-          S3_BUCKET: !Ref MedicalDocumentsBucket
+          S3_BUCKET: !Sub lks-peserta-telemedicine-${Stage}
       Policies:
         - SSMParameterReadPolicy:
             ParameterName: lks/telemedicine/db/*
-        - S3ReadPolicy:
-            BucketName: !Ref MedicalDocumentsBucket
+        - Statement:
+            - Effect: Allow
+              Action:
+                - s3:GetObject
+                - s3:ListBucket
+              Resource:
+                - !Sub "arn:aws:s3:::lks-peserta-telemedicine-${Stage}"
+                - !Sub "arn:aws:s3:::lks-peserta-telemedicine-${Stage}/*"
         - SQSSendMessagePolicy:
             QueueName: !GetAtt DocumentQueue.QueueName
         - VPCAccessPolicy: {}
@@ -359,17 +373,6 @@ Resources:
         SubnetIds:
           - !Ref PrivateSubnet1
           - !Ref PrivateSubnet2
-      Events:
-        S3Upload:
-          Type: S3
-          Properties:
-            Bucket: !Ref MedicalDocumentsBucket
-            Events: s3:ObjectCreated:*
-            Filter:
-              S3Key:
-                Rules:
-                  - Name: prefix
-                    Value: medical-documents/
       Tags:
         Project: nusantara-telemedicine
         Service: document

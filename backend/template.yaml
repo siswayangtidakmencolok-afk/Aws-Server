@@ -1,6 +1,6 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
-Description: Nusantara Telemedicine - Final Stable Stack (No RDS)
+Description: Nusantara Telemedicine - Public Upload for Testing
 
 Globals:
   Function:
@@ -41,18 +41,8 @@ Resources:
       Handler: src/auth/index.loginHandler
       CodeUri: .
       Events:
-        Login:
-          Type: Api
-          Properties:
-            RestApiId: !Ref TelemedicineApi
-            Path: /auth/login
-            Method: POST
-        Register:
-          Type: Api
-          Properties:
-            RestApiId: !Ref TelemedicineApi
-            Path: /auth/register
-            Method: POST
+        Login: {Type: Api, Properties: {RestApiId: !Ref TelemedicineApi, Path: /auth/login, Method: POST}}
+        Register: {Type: Api, Properties: {RestApiId: !Ref TelemedicineApi, Path: /auth/register, Method: POST}}
 
   AuthorizerFunction:
     Type: AWS::Serverless::Function
@@ -68,33 +58,7 @@ Resources:
       Handler: src/doctor/index.handler
       CodeUri: .
       Events:
-        ListDoctors:
-          Type: Api
-          Properties:
-            RestApiId: !Ref TelemedicineApi
-            Path: /doctor
-            Method: GET
-            Auth:
-              Authorizer: JwtAuthorizer
-
-  BookingFunction:
-    Type: AWS::Serverless::Function
-    Properties:
-      FunctionName: !Sub lks-booking-${AWS::StackName}
-      Handler: src/booking/index.handler
-      CodeUri: .
-      Policies:
-        - SQSSendMessagePolicy:
-            QueueName: !GetAtt BookingQueue.QueueName
-      Events:
-        CreateBooking:
-          Type: Api
-          Properties:
-            RestApiId: !Ref TelemedicineApi
-            Path: /appointment
-            Method: POST
-            Auth:
-              Authorizer: JwtAuthorizer
+        ListDoctors: {Type: Api, Properties: {RestApiId: !Ref TelemedicineApi, Path: /doctor, Method: GET}} # Authorizer dimatikan sementara
 
   UploadFunction:
     Type: AWS::Serverless::Function
@@ -111,41 +75,7 @@ Resources:
           Properties:
             RestApiId: !Ref TelemedicineApi
             Path: /upload-url
-            Method: POST
-            Auth:
-              Authorizer: JwtAuthorizer
-
-  DocumentFunction:
-    Type: AWS::Serverless::Function
-    Properties:
-      FunctionName: !Sub lks-doc-${AWS::StackName}
-      Handler: src/document/index.handler
-      CodeUri: .
-      Policies:
-        - S3CrudPolicy:
-            BucketName: !Ref MedicalDocumentsBucket
-        - SQSSendMessagePolicy:
-            QueueName: !GetAtt DocumentQueue.QueueName
-      Events:
-        DocEvent:
-          Type: SQS
-          Properties:
-            Queue: !GetAtt DocumentQueue.Arn
-
-  NotificationFunction:
-    Type: AWS::Serverless::Function
-    Properties:
-      FunctionName: !Sub lks-notify-${AWS::StackName}
-      Handler: src/notification/index.handler
-      CodeUri: .
-      Policies:
-        - SNSPublishMessagePolicy:
-            TopicName: !GetAtt NotificationTopic.TopicName
-      Events:
-        BookingEvent:
-          Type: SQS
-          Properties:
-            Queue: !GetAtt BookingQueue.Arn
+            Method: POST # Authorizer dimatikan sementara agar bisa tes upload
 
   # Storage & Messaging
   MedicalDocumentsBucket:
@@ -189,21 +119,11 @@ Resources:
 
   BookingQueue:
     Type: AWS::SQS::Queue
-    Properties:
-      QueueName: !Sub lks-book-q-${AWS::StackName}
-
   DocumentQueue:
     Type: AWS::SQS::Queue
-    Properties:
-      QueueName: !Sub lks-doc-q-${AWS::StackName}
-
   NotificationTopic:
     Type: AWS::SNS::Topic
-    Properties:
-      TopicName: !Sub lks-notify-t-${AWS::StackName}
 
 Outputs:
   ApiUrl:
     Value: !Sub "https://${TelemedicineApi}.execute-api.${AWS::Region}.amazonaws.com/dev/"
-  BucketName:
-    Value: !Ref MedicalDocumentsBucket

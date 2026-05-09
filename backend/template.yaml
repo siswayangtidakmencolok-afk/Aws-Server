@@ -1,6 +1,6 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
-Description: Nusantara Telemedicine - Complete Final Stack (DynamoDB + S3 Trigger)
+Description: Nusantara Telemedicine - Complete Final Stack (Fixed Circular Dependency)
 
 Globals:
   Function:
@@ -12,7 +12,7 @@ Globals:
         USERS_TABLE: !Ref UsersTable
         DOCTORS_TABLE: !Ref DoctorsTable
         DOCUMENTS_TABLE: !Ref DocumentsTable
-        S3_BUCKET: !Ref MedicalDocumentsBucket
+        S3_BUCKET: !Sub lks-tele-docs-${AWS::AccountId}
         JWT_SECRET: "lks-secret-key-2024"
 
 Resources:
@@ -95,7 +95,7 @@ Resources:
       CodeUri: .
       Policies:
         - S3CrudPolicy:
-            BucketName: !Ref MedicalDocumentsBucket
+            BucketName: !Sub lks-tele-docs-${AWS::AccountId}
       Events:
         GetUrl:
           Type: Api
@@ -114,7 +114,7 @@ Resources:
         - DynamoDBCrudPolicy:
             TableName: !Ref DocumentsTable
         - S3ReadPolicy:
-            BucketName: !Ref MedicalDocumentsBucket
+            BucketName: !Sub lks-tele-docs-${AWS::AccountId}
       Events:
         ListDocs:
           Type: Api

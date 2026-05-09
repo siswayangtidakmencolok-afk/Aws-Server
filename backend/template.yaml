@@ -139,13 +139,6 @@ Resources:
       Policies:
         - SSMParameterReadPolicy:
             ParameterName: lks/telemedicine/db/*
-        - VPCAccessPolicy: {}
-      VpcConfig:
-        SecurityGroupIds:
-          - !Ref LambdaSecurityGroup
-        SubnetIds:
-          - !Ref PrivateSubnet1
-          - !Ref PrivateSubnet2
       Events:
         Login:
           Type: Api
@@ -172,12 +165,6 @@ Resources:
       Policies:
         - SSMParameterReadPolicy:
             ParameterName: lks/telemedicine/db/*
-      VpcConfig:
-        SecurityGroupIds:
-          - !Ref LambdaSecurityGroup
-        SubnetIds:
-          - !Ref PrivateSubnet1
-          - !Ref PrivateSubnet2
       Tags:
         Project: nusantara-telemedicine
         Service: auth
@@ -195,13 +182,6 @@ Resources:
       Policies:
         - SSMParameterReadPolicy:
             ParameterName: lks/telemedicine/db/*
-        - VPCAccessPolicy: {}
-      VpcConfig:
-        SecurityGroupIds:
-          - !Ref LambdaSecurityGroup
-        SubnetIds:
-          - !Ref PrivateSubnet1
-          - !Ref PrivateSubnet2
       Events:
         ListDoctors:
           Type: Api
@@ -235,13 +215,6 @@ Resources:
             ParameterName: lks/telemedicine/db/*
         - SQSSendMessagePolicy:
             QueueName: !GetAtt BookingQueue.QueueName
-        - VPCAccessPolicy: {}
-      VpcConfig:
-        SecurityGroupIds:
-          - !Ref LambdaSecurityGroup
-        SubnetIds:
-          - !Ref PrivateSubnet1
-          - !Ref PrivateSubnet2
       Events:
         CreateBooking:
           Type: Api
@@ -366,13 +339,6 @@ Resources:
                 - !Sub "arn:aws:s3:::lks-peserta-telemedicine-${Stage}/*"
         - SQSSendMessagePolicy:
             QueueName: !GetAtt DocumentQueue.QueueName
-        - VPCAccessPolicy: {}
-      VpcConfig:
-        SecurityGroupIds:
-          - !Ref LambdaSecurityGroup
-        SubnetIds:
-          - !Ref PrivateSubnet1
-          - !Ref PrivateSubnet2
       Tags:
         Project: nusantara-telemedicine
         Service: document
@@ -387,13 +353,6 @@ Resources:
       Policies:
         - SNSPublishMessagePolicy:
             TopicName: !GetAtt NotificationTopic.TopicName
-        - VPCAccessPolicy: {}
-      VpcConfig:
-        SecurityGroupIds:
-          - !Ref LambdaSecurityGroup
-        SubnetIds:
-          - !Ref PrivateSubnet1
-          - !Ref PrivateSubnet2
       Events:
         BookingQueueEvent:
           Type: SQS
@@ -489,13 +448,6 @@ Resources:
       Policies:
         - SSMParameterReadPolicy:
             ParameterName: lks/telemedicine/db/*
-        - VPCAccessPolicy: {}
-      VpcConfig:
-        SecurityGroupIds:
-          - !Ref LambdaSecurityGroup
-        SubnetIds:
-          - !Ref PrivateSubnet1
-          - !Ref PrivateSubnet2
       Tags:
         Project: nusantara-telemedicine
         Service: database
@@ -570,185 +522,6 @@ Resources:
       Action: lambda:InvokeFunction
       Principal: apigateway.amazonaws.com
       SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*/sendMessage
-
-  # ============================================================
-  # VPC Infrastructure
-  # ============================================================
-  TelemedicineVPC:
-    Type: AWS::EC2::VPC
-    Properties:
-      CidrBlock: 10.0.0.0/16
-      EnableDnsHostnames: true
-      EnableDnsSupport: true
-      Tags:
-        - Key: Name
-          Value: !Sub lks-vpc-peserta-${Stage}
-
-  InternetGateway:
-    Type: AWS::EC2::InternetGateway
-    Properties:
-      Tags:
-        - Key: Name
-          Value: !Sub lks-igw-peserta-${Stage}
-
-  VPCGatewayAttachment:
-    Type: AWS::EC2::VPCGatewayAttachment
-    Properties:
-      VpcId: !Ref TelemedicineVPC
-      InternetGatewayId: !Ref InternetGateway
-
-  # Public Subnets
-  PublicSubnet1:
-    Type: AWS::EC2::Subnet
-    Properties:
-      VpcId: !Ref TelemedicineVPC
-      CidrBlock: 10.0.1.0/24
-      AvailabilityZone: !Select [ 0, !GetAZs "" ]
-      MapPublicIpOnLaunch: true
-      Tags:
-        - Key: Name
-          Value: !Sub lks-public-subnet-1-${Stage}
-
-  PublicSubnet2:
-    Type: AWS::EC2::Subnet
-    Properties:
-      VpcId: !Ref TelemedicineVPC
-      CidrBlock: 10.0.2.0/24
-      AvailabilityZone: !Select [ 1, !GetAZs "" ]
-      MapPublicIpOnLaunch: true
-      Tags:
-        - Key: Name
-          Value: !Sub lks-public-subnet-2-${Stage}
-
-  # Private Subnets
-  PrivateSubnet1:
-    Type: AWS::EC2::Subnet
-    Properties:
-      VpcId: !Ref TelemedicineVPC
-      CidrBlock: 10.0.3.0/24
-      AvailabilityZone: !Select [ 0, !GetAZs "" ]
-      Tags:
-        - Key: Name
-          Value: !Sub lks-private-subnet-1-${Stage}
-
-  PrivateSubnet2:
-    Type: AWS::EC2::Subnet
-    Properties:
-      VpcId: !Ref TelemedicineVPC
-      CidrBlock: 10.0.4.0/24
-      AvailabilityZone: !Select [ 1, !GetAZs "" ]
-      Tags:
-        - Key: Name
-          Value: !Sub lks-private-subnet-2-${Stage}
-
-  # NAT Gateway
-  NATEIP:
-    Type: AWS::EC2::EIP
-    DependsOn: VPCGatewayAttachment
-    Properties:
-      Domain: vpc
-
-  NATGateway:
-    Type: AWS::EC2::NATGateway
-    Properties:
-      AllocationId: !GetAtt NATEIP.AllocationId
-      SubnetId: !Ref PublicSubnet1
-      Tags:
-        - Key: Name
-          Value: !Sub lks-nat-peserta-${Stage}
-
-  # Routing
-  PublicRouteTable:
-    Type: AWS::EC2::RouteTable
-    Properties:
-      VpcId: !Ref TelemedicineVPC
-      Tags:
-        - Key: Name
-          Value: !Sub lks-public-rt-${Stage}
-
-  PublicRoute:
-    Type: AWS::EC2::Route
-    Properties:
-      RouteTableId: !Ref PublicRouteTable
-      DestinationCidrBlock: 0.0.0.0/0
-      GatewayId: !Ref InternetGateway
-
-  PublicSubnet1Association:
-    Type: AWS::EC2::SubnetRouteTableAssociation
-    Properties:
-      SubnetId: !Ref PublicSubnet1
-      RouteTableId: !Ref PublicRouteTable
-
-  PublicSubnet2Association:
-    Type: AWS::EC2::SubnetRouteTableAssociation
-    Properties:
-      SubnetId: !Ref PublicSubnet2
-      RouteTableId: !Ref PublicRouteTable
-
-  PrivateRouteTable:
-    Type: AWS::EC2::RouteTable
-    Properties:
-      VpcId: !Ref TelemedicineVPC
-      Tags:
-        - Key: Name
-          Value: !Sub lks-private-rt-${Stage}
-
-  PrivateRoute:
-    Type: AWS::EC2::Route
-    Properties:
-      RouteTableId: !Ref PrivateRouteTable
-      DestinationCidrBlock: 0.0.0.0/0
-      NatGatewayId: !Ref NATGateway
-
-  PrivateSubnet1Association:
-    Type: AWS::EC2::SubnetRouteTableAssociation
-    Properties:
-      SubnetId: !Ref PrivateSubnet1
-      RouteTableId: !Ref PrivateRouteTable
-
-  PrivateSubnet2Association:
-    Type: AWS::EC2::SubnetRouteTableAssociation
-    Properties:
-      SubnetId: !Ref PrivateSubnet2
-      RouteTableId: !Ref PrivateRouteTable
-
-  # Security Groups
-  LambdaSecurityGroup:
-    Type: AWS::EC2::SecurityGroup
-    Properties:
-      GroupDescription: Security group for Telemedicine Lambda functions
-      VpcId: !Ref TelemedicineVPC
-      SecurityGroupEgress:
-        - IpProtocol: -1
-          CidrIp: 0.0.0.0/0
-      Tags:
-        - Key: Name
-          Value: !Sub lks-lambda-sg-${Stage}
-
-  DBSecurityGroup:
-    Type: AWS::EC2::SecurityGroup
-    Properties:
-      GroupDescription: Security group for Telemedicine RDS instance
-      VpcId: !Ref TelemedicineVPC
-      SecurityGroupIngress:
-        - IpProtocol: tcp
-          FromPort: 5432
-          ToPort: 5432
-          SourceSecurityGroupId: !Ref LambdaSecurityGroup
-      Tags:
-        - Key: Name
-          Value: !Sub lks-db-sg-${Stage}
-
-  DBSubnetGroup:
-    Type: AWS::RDS::DBSubnetGroup
-    Properties:
-      DBSubnetGroupDescription: Subnets for Telemedicine RDS instance
-      SubnetIds:
-        - !Ref PrivateSubnet1
-        - !Ref PrivateSubnet2
-      Tags:
-        - Key: Name
-          Value: !Sub lks-db-subnet-group-${Stage}
 
   # ============================================================
   # DynamoDB Tables
@@ -955,12 +728,9 @@ Resources:
       DBName: telemedicine
       AllocatedStorage: 20
       StorageEncrypted: true
-      PubliclyAccessible: false
+      PubliclyAccessible: true
       MultiAZ: false
       BackupRetentionPeriod: 7
-      DBSubnetGroupName: !Ref DBSubnetGroup
-      VPCSecurityGroups:
-        - !Ref DBSecurityGroup
       Tags:
         - Key: Project
           Value: nusantara-telemedicine

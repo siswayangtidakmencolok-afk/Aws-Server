@@ -54,7 +54,7 @@ Resources:
       Auth:
         Authorizers:
           JwtAuthorizer:
-            FunctionArn: !GetAtt AuthFunction.Arn
+            FunctionArn: !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:lks-auth-peserta-${Stage}"
             Identity:
               Header: Authorization
         AddDefaultAuthorizerToCorsPreflight: false
@@ -296,11 +296,13 @@ Resources:
       Name: !Sub lks-booking-sm-peserta-${Stage}
       DefinitionUri: statemachine/booking.asl.json
       DefinitionSubstitutions:
-        DoctorFunctionArn: !GetAtt DoctorFunction.Arn
+        DoctorFunctionArn: !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:lks-doctor-peserta-${Stage}"
         NotificationTopicArn: !Ref NotificationTopic
       Policies:
-        - LambdaInvokePolicy:
-            FunctionName: !Ref DoctorFunction
+        - Statement:
+            - Effect: Allow
+              Action: lambda:InvokeFunction
+              Resource: !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:lks-doctor-peserta-${Stage}"
         - SNSPublishMessagePolicy:
             TopicName: !GetAtt NotificationTopic.TopicName
       Tags:

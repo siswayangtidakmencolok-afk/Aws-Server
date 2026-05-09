@@ -1,44 +1,118 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
-Description: Nusantara Telemedicine - Minimal Stack for Debugging
+Description: Nusantara Telemedicine - Full Functions (No RDS/SSM)
 
 Globals:
   Function:
     Runtime: nodejs20.x
     Timeout: 30
     MemorySize: 256
+    Environment:
+      Variables:
+        CHAT_TABLE: !Ref ChatSessionsTable
+        CONNECTIONS_TABLE: !Ref WebSocketConnectionsTable
+        BOOKING_QUEUE_URL: !Ref BookingQueue
+        DOCUMENT_QUEUE_URL: !Ref DocumentQueue
+        SNS_TOPIC_ARN: !Ref NotificationTopic
 
 Resources:
-  # API Gateway Minimal
   TelemedicineApi:
     Type: AWS::Serverless::Api
     Properties:
-      Name: !Sub lks-api-debug-${AWS::StackName}
+      Name: !Sub lks-api-peserta-${AWS::StackName}
       StageName: dev
       Cors:
         AllowOrigin: "'*'"
+      Auth:
+        Authorizers:
+          JwtAuthorizer:
+            FunctionArn: !GetAtt AuthorizerFunction.Arn
+            Identity:
+              Header: Authorization
 
-  # Satu Lambda saja untuk tes
+  # Functions
   AuthFunction:
     Type: AWS::Serverless::Function
     Properties:
-      FunctionName: !Sub lks-auth-debug-${AWS::StackName}
+      FunctionName: !Sub lks-auth-${AWS::StackName}
       Handler: src/auth/index.loginHandler
       CodeUri: .
       Events:
-        Login:
-          Type: Api
-          Properties:
-            RestApiId: !Ref TelemedicineApi
-            Path: /auth/login
-            Method: POST
+        Login: {Type: Api, Properties: {RestApiId: !Ref TelemedicineApi, Path: /auth/login, Method: POST}}
+        Register: {Type: Api, Properties: {RestApiId: !Ref TelemedicineApi, Path: /auth/register, Method: POST}}
 
-  # S3 Bucket dengan nama unik
+  AuthorizerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub lks-authorizer-${AWS::StackName}
+      Handler: src/auth/index.authorizerHandler
+      CodeUri: .
+
+  DoctorFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub lks-doctor-${AWS::StackName}
+      Handler: src/doctor/index.handler
+      CodeUri: .
+      Events:
+        ListDoctors: {Type: Api, Properties: {RestApiId: !Ref TelemedicineApi, Path: /doctor, Method: GET, Auth: {Authorizer: JwtAuthorizer}}}
+
+  BookingFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub lks-booking-${AWS::StackName}
+      Handler: src/booking/index.handler
+      CodeUri: .
+      Policies: [SQSSendMessagePolicy: {QueueName: !GetAtt BookingQueue.QueueName}]
+      Events:
+        CreateBooking: {Type: Api, Properties: {RestApiId: !Ref TelemedicineApi, Path: /appointment, Method: POST, Auth: {Authorizer: JwtAuthorizer}}}
+
+  UploadFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub lks-upload-${AWS::StackName}
+      Handler: src/upload/index.handler
+      CodeUri: .
+      Environment: {Variables: {S3_BUCKET: !Ref MedicalDocumentsBucket}}
+      Policies:
+        - S3CrudPolicy: {BucketName: !Ref MedicalDocumentsBucket}
+      Events:
+        GetUploadUrl: {Type: Api, Properties: {RestApiId: !Ref TelemedicineApi, Path: /upload-url, Method: POST, Auth: {Authorizer: JwtAuthorizer}}}
+
+  # Storage & Messaging
   MedicalDocumentsBucket:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: !Sub lks-telemedicine-debug-${AWS::AccountId}
+      BucketName: !Sub lks-telemedicine-docs-${AWS::AccountId}
+
+  ChatSessionsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub lks-chat-sessions-${AWS::StackName}
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions: [{AttributeName: session_id, AttributeType: S}, {AttributeName: timestamp, AttributeType: N}]
+      KeySchema: [{AttributeName: session_id, KeyType: HASH}, {AttributeName: timestamp, KeyType: RANGE}]
+
+  WebSocketConnectionsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub lks-ws-connections-${AWS::StackName}
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions: [{AttributeName: connectionId, AttributeType: S}]
+      KeySchema: [{AttributeName: connectionId, KeyType: HASH}]
+
+  BookingQueue:
+    Type: AWS::SQS::Queue
+    Properties: {QueueName: !Sub lks-booking-queue-${AWS::StackName}}
+
+  DocumentQueue:
+    Type: AWS::SQS::Queue
+    Properties: {QueueName: !Sub lks-document-queue-${AWS::StackName}}
+
+  NotificationTopic:
+    Type: AWS::SNS::Topic
+    Properties: {TopicName: !Sub lks-notification-topic-${AWS::StackName}}
 
 Outputs:
   ApiUrl:
-    Value: !Sub "https://${TelemedicineApi}.execute-api.${AWS::Region}.amazonaws.com/dev/auth/login"
+    Value: !Sub "https://${TelemedicineApi}.execute-api.${AWS::Region}.amazonaws.com/dev/"

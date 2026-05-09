@@ -54,58 +54,11 @@ Resources:
       Auth:
         Authorizers:
           JwtAuthorizer:
-            FunctionArn: !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:lks-auth-peserta-${Stage}"
+            FunctionArn: !GetAtt AuthorizerFunction.Arn
             Identity:
               Header: Authorization
         AddDefaultAuthorizerToCorsPreflight: false
 
-  # ============================================================
-  # AWS WAF (Web Application Firewall)
-  # ============================================================
-  TelemedicineWebACL:
-    Type: AWS::WAFv2::WebACL
-    Properties:
-      Name: !Sub lks-waf-fhazwan-${Stage}
-      Description: WAF untuk melindungi API Telemedicine
-      Scope: REGIONAL
-      DefaultAction:
-        Allow: {}
-      VisibilityConfig:
-        SampledRequestsEnabled: true
-        CloudWatchMetricsEnabled: true
-        MetricName: !Sub lks-waf-metric-${Stage}
-      Rules:
-        - Name: DdosProtectionRateLimit
-          Priority: 1
-          Action:
-            Block: {}
-          Statement:
-            RateBasedStatement:
-              Limit: 50
-              AggregateKeyType: IP
-          VisibilityConfig:
-            SampledRequestsEnabled: true
-            CloudWatchMetricsEnabled: true
-            MetricName: DdosProtectionRateLimitMetric
-        - Name: AWSManagedRulesCommonRuleSet
-          Priority: 2
-          OverrideAction:
-            None: {}
-          Statement:
-            ManagedRuleGroupStatement:
-              VendorName: AWS
-              Name: AWSManagedRulesCommonRuleSet
-          VisibilityConfig:
-            SampledRequestsEnabled: true
-            CloudWatchMetricsEnabled: true
-            MetricName: AWSManagedRulesCommonRuleSetMetric
-
-#  WebACLAssociation:
-#    Type: AWS::WAFv2::WebACLAssociation
-#    DependsOn: TelemedicineApiStage
-#    Properties:
-#      ResourceArn: !Sub arn:aws:apigateway:${AWS::Region}::/restapis/${TelemedicineApi}/stages/${TelemedicineApi.Stage}
-#      WebACLArn: !GetAtt TelemedicineWebACL.Arn
 
 
   # ============================================================
@@ -269,7 +222,7 @@ Resources:
       Name: !Sub lks-booking-sm-peserta-${Stage}
       DefinitionUri: statemachine/booking.asl.json
       DefinitionSubstitutions:
-        DoctorFunctionArn: !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:lks-doctor-peserta-${Stage}"
+        DoctorFunctionArn: !GetAtt DoctorFunction.Arn
         NotificationTopicArn: !Ref NotificationTopic
       Policies:
         - Statement:
@@ -737,39 +690,6 @@ Resources:
         - Key: Service
           Value: database
 
-  # ============================================================
-  # CloudWatch Alarms
-  # ============================================================
-  LambdaErrorAlarm:
-    Type: AWS::CloudWatch::Alarm
-    Properties:
-      AlarmName: !Sub lks-lambda-errors-peserta-${Stage}
-      AlarmDescription: Alarm when Lambda error rate exceeds threshold
-      Namespace: AWS/Lambda
-      MetricName: Errors
-      Statistic: Sum
-      Period: 300
-      EvaluationPeriods: 2
-      Threshold: 5
-      ComparisonOperator: GreaterThanThreshold
-      TreatMissingData: notBreaching
-
-  SQSBacklogAlarm:
-    Type: AWS::CloudWatch::Alarm
-    Properties:
-      AlarmName: !Sub lks-sqs-backlog-peserta-${Stage}
-      AlarmDescription: Alarm when SQS queue backlog exceeds threshold
-      Namespace: AWS/SQS
-      MetricName: ApproximateNumberOfMessagesVisible
-      Dimensions:
-        - Name: QueueName
-          Value: !GetAtt BookingQueue.QueueName
-      Statistic: Sum
-      Period: 300
-      EvaluationPeriods: 2
-      Threshold: 100
-      ComparisonOperator: GreaterThanThreshold
-      TreatMissingData: notBreaching
 
 # ============================================================
 # Outputs
